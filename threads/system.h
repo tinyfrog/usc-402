@@ -1,0 +1,116 @@
+// system.h 
+//	All global variables used in Nachos are defined here.
+//
+// Copyright (c) 1992-1993 The Regents of the University of California.
+// All rights reserved.  See copyright.h for copyright notice and limitation 
+// of liability and disclaimer of warranty provisions.
+
+#ifndef SYSTEM_H
+#define SYSTEM_H
+
+#include "copyright.h"
+#include "utility.h"
+#include "thread.h"
+#include "scheduler.h"
+#include "interrupt.h"
+#include "stats.h"
+#include "timer.h"
+#include "../userprog/process.h"
+#include  <list>
+#include <ctime>
+// Initialization and cleanup routines
+extern void Initialize(int argc, char **argv); 	// Initialization,
+						// called before anything else
+extern void Cleanup();				// Cleanup, called when
+						// Nachos is done.
+extern int tt; //total netthread
+extern int threadCounter;
+extern Thread *currentThread;			// the thread holding the CPU
+extern Thread *threadToBeDestroyed;  		// the thread that just finished
+extern Scheduler *scheduler;			// the ready list
+extern Interrupt *interrupt;			// interrupt status
+extern Statistics *stats;			// performance metrics
+extern Timer *timer;				// the hardware alarm clock
+extern int netname;                             //machine ID,passed at command line
+extern int TLBCounter;
+
+extern IPT* ipt;
+
+//VM
+#define SWAPFILE_MAX_PAGES 4096
+#define RAND 1
+#define FIFO 0
+extern OpenFile* swapFile;
+extern FileSystem* fs;
+extern BitMap* sfBM;
+extern int ChoiceOfReplacementPolicy;
+extern list<int> fifoQueue;
+extern int test;
+extern Lock *IPTLock;
+extern Lock *SwapLock;
+//VM_END
+
+
+#ifdef USER_PROGRAM
+
+#define  MAX_LOCK_NUM 500
+#define  MAX_CONDITION_NUM 500
+#include "table.h"
+extern Table* LockTable;	 
+extern Table* ConditionTable;
+extern Table* ProcessTable;
+extern Lock* BMLock;
+extern Lock* PLock;
+#include "../threads/synch.h"
+ struct ConditionEntry{
+		Condition *condition;
+		int pid;
+		int lock;
+		int status;
+		bool toBeDeleted; 
+  };  
+
+    struct LockEntry{
+		Lock *lock;
+		int pid;
+                int status;
+		bool toBeDeleted; 
+  };  
+
+#include "../userprog/bitmap.h"
+	extern BitMap *bm;
+	extern int processCounter;
+
+#endif
+
+
+	       
+/*
+int myexp ( int count );
+
+void itoa( char arr[], int size, int val );
+*/
+
+
+
+#ifdef USER_PROGRAM
+#include "machine.h"
+extern Machine* machine;	// user program memory and registers
+#endif
+
+#ifdef FILESYS_NEEDED 		// FILESYS or FILESYS_STUB 
+#include "filesys.h"
+extern FileSystem  *fileSystem;
+#endif
+
+#ifdef FILESYS
+#include "synchdisk.h"
+extern SynchDisk   *synchDisk;
+#endif
+
+#ifdef NETWORK
+#include "post.h"
+extern PostOffice* postOffice;
+#endif
+
+#endif // SYSTEM_H

@@ -1,0 +1,468 @@
+stTitle:  Writeup for Project 4, Fall 2010 
+
+ Date:  12/5/2010 
+
+ Group Num 55 : Name            Email                  Student ID 
+
+               Ruoyang Wang     ruoyangw@usc.edu       1491125023
+
+               Yipei Wang       yipeiwan@usc.edu       5879594595
+	       
+	       Shaobo Sun	shaobosu@usc.edu       8787791356
+
+
+I. Requirements: 
+		Part1:
+		The requirement of this project is to build a fully distributed network, no server exist in the network.
+		Then we need to run our Carl's JR simulation in this fully distributed network.
+		Part2:
+		Make sure the network will work correctly when lose of package could happen at a certain rate.
+
+II. Assumptions: 
+		1, we use a big physical memory, so change to physicalpage to 4096.
+		2, The Mailbox number for userprogam threads are always even, such as 0,2,4,6...
+		3, The Mailbox number for network threads are always odd, such ass 1,3,5,6
+		4, The Mailbox Number of a pair(userprog thread &network thread) are consecutive
+		5, When running the program on one nachos instance, the Max number of Mailbox is 99
+		6, When running the program on mutiple nachos instances, the max number of Mailbox is 10
+		7, Registration server is always on a seperated nachos instance with machine ID 0
+		8, when userprog send a message to its network thread, the unique ID it uses is actually its network thread's ID,
+		   which makes easier for his network threads to send message to other network threads.
+		9, time stamp generated when userprog send the msg to its network thread	
+		10,timestamp range: 0-999			
+
+
+III. Design: 
+		1, Registration Server
+			0, pass a value in command line to tell the registration server how much msg it expect from network threads
+			a, Each network thread, when receive its userprogam's start_simulation call, send a msg to registartion server
+			b, When the # of msg received equals to the value passed in, reply to each network thread
+			c, the message contains: Machine ID and how much threads are there on that machine
+				The message will be like the following:
+				0,4,1,5,2,3   ----meaning that 4 network thread on machineID 0 ,5 on machineID 1 and 3 on Machine ID 2	
+		2,network threads:
+			0, send a msg to registration server and wait for reply
+			a, Decode, using the example given above, the network thread IDs should be 001,003,005,007,101,103,105,107,109,201,203,205
+			b, using these numbers as network threads ID and form a timestamp table, initizes the time value to be -1 
+			c, Reply to its userprog threads that start_simulation is good to go. 	
+			d, in a while(true) loop to receive messages, message can from the corresponding userprog threads or from other network thread
+			e, upon receiving a message: 
+				extract timestamp and the threadID
+				find the entry using the threadID and upadte the timestamp table
+				insert the msg into the message queue, store info in details(include requestType and arguments) so that when we need process we dont need to extract again
+				send this messsage to all other network threads if this is an actually message(not just a timestamp reply)
+				extract the smallest timestamp value from the time stamp table,save as smallest timestamp
+				iterate the queued message and if timestamp <= smallest time stamp,add to processable message queue
+				at the same time, remove the processable msg from the queued messages
+				if the message only has an ID and a timestmp, do nothing.
+				if the message has request type and is from my userprog, forward the message to all other network thread(not include myself)
+				if the message has request type and is from other network threads, make a message only contains TimeStamp and ID, send to all network thread(include myself)
+				process all the messages in processable message queue
+			f, keep doing step e
+		3,FOR extra credit:
+	
+			Resend: 
+				1.when the current time minus last-resend time is larger than the interval 
+					Send All the messages in the sending queue
+
+			Send:
+				1.Store the destination machine id and destination mailbox id into sending queue
+				2.Send the message
+
+			Receive:
+				1.Receive a message;
+				2.check the message type: "msg" or "ack"
+				3.if it's a "msg"
+					a.find the receiving queue for that sender 
+					b.is the receiving queue empty?
+						if so, only received message with the sequence number 0 
+					c.if following the sequence nubmer, store the new msg in the receiving queue
+					d.if it doesn't follow the sequence
+						check if it's already in the queue
+							if so, send ack again
+							else drop it
+				4.if it's an "ack"
+					find the corresponding message in the sending queue, and remove it.
+
+ 
+
+IV. Implementation: 
+		 + Files Modified 
+		   printf("HERRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR\n");
+	postOffice->Receive(currentThread->mailBox, &inPktHdr, &inMailHdr, buffer);
+	printf("HERR+++++++++++++++++++++++RR\n");
+	if(inPktHdr.from == netname && inMailHdr.from == currentThread->mailBox-1 && buffer[0]=='m') {
+
+		printf("HERRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR\n");
+			if(tt!=0){
+				
+				requestType="n";
+				sprintf(data,"%s,%d",requestType,tt);  // need the num of totalThread
+				
+				sendToReg(data,tid);
+				
+			}
+
+			requestType="m";
+			sprintf(data,"%s,%d,%d",requestType,outPktHdr.from,currentThread->mailBox);  // need the num of currentThread
+			
+			printf("Got here!\n");
+			sendToReg(data,tid);
+			
+		}
+	
+
+
+		//wait for reponse
+		postOffice->Receive(currentThread->mailBox, &inPktHdr, &inMailHdr, buffer);
+		printf("buffer :----->   %s\n",buffer);
+		char *b= strtok(buffer,",");
+		byte _b=*b;
+		int tMachine= (int)_b;
+
+		printf("TOTAL instance I KNOW: %d\n",tMachine);
+	
+		char *info = strtok(NULL,",");
+	
+		byte *_info=(byte* )info;
+			
+			int counter=0;
+			for(int i=0;i<tMachine;i++){
+				byte _infomid = _info[counter];
+				int mid = (int)_infomid;
+		
+				byte _infol=_info[counter+1];
+				byte _infor=_info[counter+2];
+
+			        int sum = (int)(_infol<<8|_infor);	
+			
+				
+				//save this...........................	
+				//int rmid=(int)_info;
+				printf("Machine ID: %d, total Threads: %d\n",mid,sum);
+				
+				for(int k=0;k<sum;k++){
+					int id = 2*(k+1)-1;
+					int tempid = mid*100+id;
+					printf("add to list %d", tempid);
+					idList->Append((void*)tempid);
+				}
+
+
+				counter+=3;
+			}
+
+			printf("List size %d\n", idList->Size());	
+
+			//start the UP
+			printf("NETWORK THREAD mailbox:%d\n",currentThread->mailBox);
+			char *data="Start";
+			outPktHdr.to = netname;		//mahcine ID
+			outMailHdr.to = currentThread->mailBox-1;  //mailbox NO
+			outMailHdr.from = currentThread->mailBox;
+			outMailHdr.length = strlen(data) + 1;
+			//postOffice->Send(outPktHdr,outMailHdr,data);
+			
+			ListElement *tir = idList->first;
+			int myC=0;
+			while(tir!=NULL){
+			  TimeStamp *tempts=new TimeStamp;
+			  tempts->ntID=(int)tir->item;
+			  tempts->time=-1;
+			  TimeStampList->Append(tempts);
+			  myC++;
+			//  printf("net thread ID : %d is add to the timestamp table now the size is %d\n ", (int)tir->item,myC);
+			//  delete tempts;
+			    tir=tir->next;
+			}
+			
+		ListElement *check = TimeStampList->first;
+		while(check!=NULL){
+			printf("IN the stamps ->%d\n",((TimeStamp *)check->item)->ntID);
+			check=check->next;
+		}
+		
+	
+			
+	
+	
+			postOffice->Send(outPktHdr,outMailHdr,data);
+	
+	
+	
+	while(true){
+
+		char buffer[40];
+	  	printf("Wait for a request to come...........................................\n");
+	    postOffice->Receive(currentThread->mailBox, &inPktHdr, &inMailHdr, buffer);
+		char currentMSG[40];
+		sprintf(currentMSG,"%s",buffer);
+		//printf("STRLEN: %d",strlen(buffer));
+		//memcpy(currentMSG,buffer,20);
+		
+		//printf("GETMSG:the current message is  %d,   MY ID : %d\n", inMailHdr.from,currentThread->mailBox);
+		printf("buffer : %s \n", buffer);
+	    charTimeStamp = strtok (buffer,",");
+	    timeStamp=atoi(charTimeStamp);
+	    charID =strtok(NULL,",");
+	    ID = atoi(charID);
+
+		printf("@ receive ID: %d\n", ID);
+
+	    requestType = strtok(NULL,",");
+
+	    if(requestType!=NULL)
+	    arg1 = strtok(NULL,",");	   
+	    if(arg1!=NULL)
+	      arg2 = strtok(NULL,",");
+	
+		//iterate through the timestamp table, find the match network thread and update the timestamp
+		ListElement *temp1= TimeStampList->first;
+		while(temp1!=NULL){
+		  if(((TimeStamp *)temp1->item)->ntID==ID){
+
+		    ((TimeStamp *)temp1->item)->time=timeStamp;
+		    printf("thread %d Update TimeStamp for %d------------------------the value %d-\n",netname*100+currentThread->mailBox,((TimeStamp *)temp1->item)->ntID,timeStamp);
+		    break;
+		  }
+
+		  temp1=temp1->next;
+		}
+		//delete temp1;
+		//if send from my userprog, then this step does not do anything
+
+
+
+	
+
+
+
+
+		if(requestType!=NULL){
+		//add the message to the message queue when its not a "simple reply" message
+		MessageEntry *temp2 =new MessageEntry;
+		/*
+		if(ID==0){//send from my userprog
+		  temp2->ntID=netname*100+currentThread->mailBox;
+		}
+		else
+		*/
+		temp2->ntID=ID;
+		
+		temp2->time=timeStamp;
+		temp2->message=buffer;   // need to convert char* to string?
+		temp2->RT=requestType;
+		if(arg1!=NULL)
+		temp2->argument1=arg1;
+		if(arg2!=NULL)
+		temp2->argument2=arg2;
+		printf("move a new message into msg queue,time %d, id  %d  , requesttype %s",timeStamp,ID,requestType);
+		QueuedMessages->SortedInsert((void *)temp2,timeStamp);
+		//delete temp2;
+		}
+
+
+
+		//extract the smallest value from the timestamp table;
+		ListElement *temp3 =TimeStampList->first;
+		smallestTS=((TimeStamp *)temp3->item)->time;
+		while(temp3!=NULL){
+		  if(smallestTS > ((TimeStamp *)temp3->item) ->time)
+		    smallestTS=((TimeStamp *)temp3->item) ->time;
+
+		  temp3=temp3->next;
+		}
+		printf("the smallest time stamp in table is %d\n",smallestTS);
+		//delete temp3;
+
+		//find all the queued  messages that has the equal or less timestamp value compare to the smallest timestamp
+		ListElement *temp4=QueuedMessages->first;
+		while(temp4!=NULL){
+		printf("find a message with timestapme %d in thread %d\n", ((MessageEntry *)temp4->item) ->time,netname*100+currentThread->mailBox);
+		  if(((MessageEntry *)temp4->item) ->time<=smallestTS)
+		    ProcessableMSG->SortedInsert((void *)temp4,((MessageEntry *)temp4->item)->time);
+		  temp4=temp4->next;
+
+		}
+		//delete temp4;
+		
+		//printf("i'm here++++++++++++++++++++++++\n");
+	
+	        //printf("Got \"%s\" from %d, box %d\n",buffer,inPktHdr.from,inMailHdr.from);
+		//printf("request type  = %s\n",requestType);
+		//printf("arg1 = %s\n",arg1);
+		
+	    fflush(stdout);
+
+
+
+	if(requestType!=NULL){
+
+	ListElement *stemp=TimeStampList->first;
+	while(stemp!=NULL){
+		outPktHdr.to = (((TimeStamp *)stemp->item)->ntID)/100;		
+		outMailHdr.to =  (((TimeStamp *)stemp->item)->ntID)%100;
+		if(ID!=(netname*100+currentThread->mailBox)){          //meaning that this message send from other network thread
+			printf("sending my timestamp to all other network!!\n");
+			myTimeStamp=time(0)%1000;
+			sprintf(buffer,"%d,%d",myTimeStamp,netname*100+currentThread->mailBox);
+			outMailHdr.length = strlen(buffer) + 1;
+			printf("this is a message from other nt threads, %s\n",buffer);
+					if(((TimeStamp *)stemp->item)->ntID != netname*100 + currentThread->mailBox)
+		bool success = postOffice->Send(outPktHdr, outMailHdr, buffer); 
+
+		}
+		else{  //msg send from my UP
+
+			printf("the msg is generated by %d, current thread id is %d\n",((TimeStamp *)stemp->item)->ntID,netname*100+currentThread->mailBox);
+
+
+			outMailHdr.length = strlen(currentMSG) + 1;
+
+			printf("forward %s to %d!\n",currentMSG,((TimeStamp *)stemp->item)->ntID);
+					if(((TimeStamp *)stemp->item)->ntID != netname*100 + currentThread->mailBox)	
+		bool success = postOffice->Send(outPktHdr, outMailHdr, currentMSG); 
+		}
+
+
+		buffer[0]='\0';
+
+	
+
+
+		stemp=stemp->next;
+
+	}
+	
+		../threads/list.h
+		../threads/main.cc
+
+            + Files added
+
+		../network/sender.cc
+
+            + Data Structures added, and the file they were added to.
+		
+		for ../network/sender.cc
+			struct SendEntry{
+				int seqNum;
+				char *msg;
+				int machineID;
+				int mailboxNum;
+			};
+
+			struct ReceiveEntry{
+				int seqNum;
+				int machineID;
+				int mailboxNum;
+			};
+		
+
+            + Data Structures modified, and the file they were added to.
+
+
+            + Functions added and in which file.
+
+		for ../network/sender.cc:
+			void MultiSender();
+			void Sender(char* destMachineID);
+			void TimerFucntion(int interval);
+			void Resend();
+
+            + Functions modified and in which file.
+
+V. Testing
+		+ How to test
+			                            compile in network and test directory
+		    	For Extra Credit:
+				for 2 instances with -l 0.1:
+			for one instance: 
+				nachos -send 1 -m 0 -l 0.1
+			for another instance: 
+				nachos -send 0 -m 1 -l 0.1
+
+				for 5 instances with -l >=0.5:
+			1st instance: 
+				nachos -multisend -m 0 -l 0.5
+			2nd instance:
+				nachos -multisend -m 1 -l 0.5
+			3rd instance:
+				nachos -multisend -m 2 -l 0.5
+			4th instance:
+				nachos -multisend -m 3 -l 0.5
+			5th instance:
+				nachos -multisend -m 4 -l 0.5
+
+			For Part1:
+				We dont have Carl's Junor translated and running but we implements total ordering of event correctly and tested it.
+				we have 8 network thread require the same lock and then release. 
+				We also tested Signal and Wait with mutiple network threads and nachos instances
+				(to test wait and signal we need at least three nachos windows total)
+				
+			To test with one registration server and another nachoes instances (two aludra windows total)
+				The following is to test 8 userprog and 8 network threads acquire the same lock and then each do a release
+				
+				first window open the register sever under network directory:
+
+					nachos -server 0
+
+				Then open another window type in machine ID and how much threads the REG sever expects:
+
+					nachos -x ../test/orderinglocktest -m 1 -tt 8     //the -tt value means how many network thread in total the server expects
+
+			To test with one registration server and more than one nachoes instance (three or more aludra windows)
+				the following is to test signal/ wait and monitors 
+				
+				The command for the server is the same 
+
+					nachos -server 0
+
+				for other instances, type in -tt # ONLY ONCE
+					e.g.: 
+						nachos -x ../test/exectest2 -m 1 -tt 2            
+					then: 
+				
+						nachos -x ../test/exectest -m 2
+
+					  
+
+		+ Test Output
+			for EC:
+		**"Time to RESEND!!! Resend the msg msg,1 to Machine 1":
+		
+		Output would show the message resended each time. If it begins to consecutively output "Time to Resend" without including any message, it means all the messages have already sent and successfully acknowledged.
+
+		
+		**"Receive ACK from Machine 1, Mailbox 0, with the sequence 2!"
+
+		
+		It means the message is acked successfully and therefore it can be removed from the sending list.
+
+		
+		**"Receive message from Machine 1, Mailbox 0, with the sequence 2!"
+
+		It meams that we receive the message in sequence order from other instances.We store that message in sending list and then send ack back.
+
+		P.S. We remove all the output about out of order messages.
+
+
+
+VI. Discussion:
+	  + Experiment expectation
+
+                    the EC works as project described.
+		    The part1, total ordering of event, should work, but no Carl's JR.
+		
+
+	  + Experiment result.
+		
+		The result meets the expectation.
+
+	  + Explanation
+		We dont have time translate Carl's Junior, translating list & array seems to take forever.
+		
+
+VII.  Miscellaneous: 
+		
+	we can not figure out how to modifie the Carl's Junior so we did EC first, the major difficult was how to deal with list & array.
+	
